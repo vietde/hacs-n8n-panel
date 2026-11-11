@@ -62,6 +62,11 @@ never talks to it directly.
 
 ## Version log
 
+- **0.1.1** — fix: the proxy view no longer defines an `options`
+  handler. Home Assistant's CORS setup adds its own preflight
+  OPTIONS handler to every route, and defining one made setup fail
+  with "already has OPTIONS handler". n8n's SPA talks to HA
+  same-origin, so it never sends a CORS preflight anyway.
 - **0.1.0** — first version: reverse proxy + sidebar panel, with the
   three ingress failure modes handled in code (BASE_PATH trailing
   slash, `$re` chunk paths without a leading slash, cookie Path

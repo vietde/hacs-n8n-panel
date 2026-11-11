@@ -10,7 +10,7 @@ DEFAULT_PORT = 5678
 
 # Integration version (mirrors manifest.json). Used to bust the browser
 # cache on the panel module URL after an update.
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 # The HA-side prefix under which n8n is served (the proxy root).
 PROXY_PREFIX = "/api/n8n_panel"

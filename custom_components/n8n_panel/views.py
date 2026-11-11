@@ -226,14 +226,17 @@ class N8nProxyView(HomeAssistantView):
         return ws
 
     # aiohttp routes each method to the matching handler; the proxy
-    # accepts everything n8n's SPA uses.
+    # accepts everything n8n's SPA uses. NOTE: no `options` handler —
+    # Home Assistant's CORS setup adds its own preflight OPTIONS
+    # handler to every route, and defining one here makes registration
+    # fail with "already has OPTIONS handler". n8n's SPA talks to HA
+    # same-origin, so it never sends a CORS preflight anyway.
     get = _handle
     post = _handle
     put = _handle
     patch = _handle
     delete = _handle
     head = _handle
-    options = _handle
 
 
 class N8nProxyRootView(HomeAssistantView):
