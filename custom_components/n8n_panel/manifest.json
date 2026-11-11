@@ -1,0 +1,1 @@
+{"codeowners":[],"config_flow":true,"dependencies":["frontend","panel_custom"],"documentation":"https://github.com/vietde/hacs-n8n-panel","domain":"n8n_panel","integration_type":"service","iot_class":"local_push","name":"n8n Panel","requirements":[],"version":"0.1.0"}
