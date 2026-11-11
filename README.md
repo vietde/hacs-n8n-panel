@@ -62,6 +62,13 @@ never talks to it directly.
 
 ## Version log
 
+- **0.1.3** — fix the 500 on the panel: the proxy built its response
+  with both the Content-Type header (forwarded from n8n) and a
+  `content_type=` parameter, and aiohttp raises ValueError ("passing
+  both Content-Type header and content_type ... is forbidden") for
+  that — the unhandled exception became the 500 "Server got itself
+  in trouble" page. The response now carries n8n's Content-Type
+  header as-is, with no `content_type=` parameter.
 - **0.1.2** — fix the 401 on the panel: an iframe load is a plain
   browser navigation and cannot send a Bearer header, so
   `requires_auth=True` on the proxy rejected the iframe even for a

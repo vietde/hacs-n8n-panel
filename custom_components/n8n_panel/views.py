@@ -227,12 +227,17 @@ class N8nProxyView(HomeAssistantView):
                     rewritten = [rewrite_set_cookie(c) for c in cookies]
                     # aiohttp's CIMultiDict keeps duplicates; build the
                     # response with the rewritten cookies attached.
+                    # NOTE: do NOT also pass content_type= here — the
+                    # Content-Type header already rides in out_headers,
+                    # and aiohttp raises ValueError ("passing both
+                    # Content-Type header and content_type ... is
+                    # forbidden") when both are given. That was the
+                    # 500 on the panel (v0.1.2).
                     out_body = rewrite_body(raw, content_type)
                     response = web.Response(
                         status=resp.status,
                         body=out_body,
                         headers=out_headers,
-                        content_type=content_type.split(";")[0] or None,
                     )
                     for cookie in rewritten:
                         response.headers.add("Set-Cookie", cookie)
@@ -242,7 +247,6 @@ class N8nProxyView(HomeAssistantView):
                     status=resp.status,
                     body=out_body,
                     headers=out_headers,
-                    content_type=content_type.split(";")[0] or None,
                 )
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
             _LOGGER.warning("n8n Panel: cannot reach %s (%s)", upstream, err)
