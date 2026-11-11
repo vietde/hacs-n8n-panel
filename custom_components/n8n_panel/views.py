@@ -184,7 +184,17 @@ class N8nProxyView(HomeAssistantView):
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
 
-    async def _handle(self, request: web.Request) -> web.StreamResponse:
+    async def _handle(
+        self, request: web.Request, path: str = ""
+    ) -> web.StreamResponse:
+        # NOTE: HA's view dispatcher calls the handler as
+        # handler(request, **request.match_info), so the {path:.*}
+        # capture from the route arrives here as the ``path``
+        # keyword argument. The signature MUST accept it — without
+        # it every proxied request dies with
+        # TypeError: _handle() got an unexpected keyword argument
+        # 'path' (the real 500; the content_type ValueError fixed
+        # in 0.1.3 was a second, latent one behind it).
         if not _validate_session(self.hass, request):
             return web.Response(status=401, text="n8n Panel session required — reload the n8n panel.")
         base_url = _n8n_base_url(self.hass)
@@ -193,7 +203,7 @@ class N8nProxyView(HomeAssistantView):
                 status=503,
                 text="n8n Panel is not configured — open Settings → Devices & Services → n8n Panel and enter the n8n host and port.",
             )
-        subpath = request.match_info.get("path", "")
+        subpath = path
         upstream = f"{base_url}/{subpath}"
         if request.query_string:
             upstream += f"?{request.query_string}"

@@ -10,7 +10,7 @@ DEFAULT_PORT = 5678
 
 # Integration version (mirrors manifest.json). Used to bust the browser
 # cache on the panel module URL after an update.
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 
 # Panel session cookie: the browser gets it from the session endpoint
 # (after HA validates the admin token) and sends it on every proxied

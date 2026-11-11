@@ -62,6 +62,19 @@ never talks to it directly.
 
 ## Version log
 
+- **0.1.4** — fix the 500 for real: HA's view dispatcher calls the
+  handler as `handler(request, **request.match_info)`, so the
+  `{path:.*}` capture from the proxy route arrives as a `path`
+  keyword argument — but `_handle` did not accept it, so every
+  proxied request died with `TypeError: _handle() got an
+  unexpected keyword argument 'path'` (read from the HA log after
+  the restart; first occurrence 11:01:32 PT). The bug was latent
+  from v0.1.0 and only surfaced once the proxy stopped requiring
+  a Bearer header (v0.1.2), because before that HA's auth
+  middleware rejected the iframe request before `_handle` was
+  ever called. `_handle` now takes `path` and uses it as the
+  upstream subpath. (The 0.1.3 content_type fix was also real —
+  it was the next 500 behind this one.)
 - **0.1.3** — fix the 500 on the panel: the proxy built its response
   with both the Content-Type header (forwarded from n8n) and a
   `content_type=` parameter, and aiohttp raises ValueError ("passing
