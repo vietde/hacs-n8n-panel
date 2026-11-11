@@ -62,6 +62,14 @@ never talks to it directly.
 
 ## Version log
 
+- **0.1.2** — fix the 401 on the panel: an iframe load is a plain
+  browser navigation and cannot send a Bearer header, so
+  `requires_auth=True` on the proxy rejected the iframe even for a
+  logged-in admin. The panel now calls a session endpoint with its HA
+  token (`fetchWithAuth`), the integration sets an admin-only,
+  HttpOnly session cookie scoped to the proxy path, and the proxy
+  validates that cookie on every request (sliding 8 h expiry). The
+  proxy answers 401 itself without a live session.
 - **0.1.1** — fix: the proxy view no longer defines an `options`
   handler. Home Assistant's CORS setup adds its own preflight
   OPTIONS handler to every route, and defining one made setup fail

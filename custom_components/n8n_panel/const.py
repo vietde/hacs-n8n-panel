@@ -10,7 +10,18 @@ DEFAULT_PORT = 5678
 
 # Integration version (mirrors manifest.json). Used to bust the browser
 # cache on the panel module URL after an update.
-VERSION = "0.1.1"
+VERSION = "0.1.2"
+
+# Panel session cookie: the browser gets it from the session endpoint
+# (after HA validates the admin token) and sends it on every proxied
+# request, because an iframe load cannot send a Bearer header.
+SESSION_COOKIE = "n8n_panel_session"
+# Server-side session lifetime (sliding: extended on each use, so it
+# stays alive while the panel is in use and ends after 8 h idle).
+SESSION_TTL = 8 * 3600
+# Cookie lifetime in the browser (longer than the server TTL, so the
+# cookie is still there when the server-side session slides forward).
+SESSION_COOKIE_MAX_AGE = 24 * 3600
 
 # The HA-side prefix under which n8n is served (the proxy root).
 PROXY_PREFIX = "/api/n8n_panel"

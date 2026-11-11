@@ -1,4 +1,5 @@
-"""HTTP views: the n8n panel asset and the reverse proxy to n8n.
+"""HTTP views: the n8n panel asset, a session endpoint, and the
+reverse proxy to n8n.
 
 The sidebar panel is a custom element (panel.js) that opens a full-size
 iframe to the proxy root (``/api/n8n_panel/``). The iframe loads n8n's
@@ -6,22 +7,29 @@ own SPA through the proxy, so the user gets the real n8n UI — sign-in,
 workflows, executions — inside Home Assistant, and logs in with their
 n8n credentials there.
 
+Auth: an iframe load is a plain browser navigation — it cannot send an
+``Authorization: Bearer`` header, so ``requires_auth=True`` on the
+proxy rejects it with 401 even for a logged-in admin (that is what
+v0.1.1 did). Instead the panel element first calls the session
+endpoint with its HA token (``hass.fetchWithAuth`` sends the Bearer
+header), the integration sets a session cookie, and the proxy
+validates that cookie on every request — including the ones n8n's SPA
+makes afterwards, which cannot carry a token of their own. The
+session is admin-only, HttpOnly, scoped to the proxy path, and slides
+its expiry forward on each use (8 h of inactivity ends it).
+
 The proxy forwards every request to the n8n instance on the LAN and
 rewrites the responses (see proxy.py) so all of n8n's URLs run under
 the HA-side prefix. WebSocket upgrades (n8n's live-push channel at
 ``/rest/push``) are relayed frame-by-frame.
-
-All proxy routes require a logged-in HA user (``requires_auth`` is the
-default); the browser sends its HA session cookie automatically, and
-n8n's own session cookie is scoped under the proxy prefix by the
-Set-Cookie rewrite, so the browser sends it back on every proxied
-request.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
+import time
 from pathlib import Path
 
 import aiohttp
@@ -29,7 +37,15 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_HOST, CONF_PORT, HA_ASSET_PREFIX, PROXY_PREFIX
+from .const import (
+    CONF_HOST,
+    CONF_PORT,
+    HA_ASSET_PREFIX,
+    PROXY_PREFIX,
+    SESSION_COOKIE,
+    SESSION_COOKIE_MAX_AGE,
+    SESSION_TTL,
+)
 from .proxy import (
     filter_request_headers,
     filter_response_headers,
@@ -56,6 +72,41 @@ def _n8n_base_url(hass: HomeAssistant) -> str | None:
     return f"http://{host}:{port}"
 
 
+def _sessions(hass: HomeAssistant) -> dict[str, float]:
+    """The live panel sessions: {token: expiry monotonic timestamp}."""
+    data = hass.data.setdefault("n8n_panel", {})
+    return data.setdefault("_sessions", {})
+
+
+def _validate_session(hass: HomeAssistant, request: web.Request) -> bool:
+    """True when the request carries a live panel session cookie.
+
+    Expired sessions are pruned on the way through, and a live one has
+    its expiry slid forward (8 h from now), so the session stays alive
+    while the panel is in use and ends after 8 h idle.
+    """
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return False
+    sessions = _sessions(hass)
+    now = time.monotonic()
+    expired = [t for t, exp in sessions.items() if exp <= now]
+    for t in expired:
+        sessions.pop(t, None)
+    expiry = sessions.get(token)
+    if expiry is None or expiry <= now:
+        return False
+    sessions[token] = now + SESSION_TTL
+    return True
+
+
+def _create_session(hass: HomeAssistant) -> str:
+    """Mint a panel session token and store it with its expiry."""
+    token = secrets.token_hex(32)
+    _sessions(hass)[token] = time.monotonic() + SESSION_TTL
+    return token
+
+
 class N8nPanelAssetView(HomeAssistantView):
     """Serve the panel element (panel.js). Kept under a separate
     ``__ha__`` prefix so the proxy catch-all never swallows it."""
@@ -79,22 +130,63 @@ class N8nPanelAssetView(HomeAssistantView):
         )
 
 
+class N8nSessionView(HomeAssistantView):
+    """Create a panel session for the browser.
+
+    The panel element calls this with its HA token (``fetchWithAuth``
+    sends the Bearer header). Admin only. On success it sets the
+    session cookie the proxy validates; the panel then opens the
+    iframe. The cookie is HttpOnly and scoped to the proxy path, so
+    only the proxied requests carry it.
+    """
+
+    url = HA_ASSET_PREFIX + "/session"
+    name = "n8n_panel:session"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.hass = hass
+
+    async def post(self, request: web.Request) -> web.StreamResponse:
+        user = request.get("hass_user")
+        if user is None or not user.is_admin:
+            return self.json_message("admin required", status_code=403)
+        token = _create_session(self.hass)
+        response = self.json({"ok": True})
+        response.set_cookie(
+            SESSION_COOKIE,
+            token,
+            path=PROXY_PREFIX + "/",
+            httponly=True,
+            samesite="Lax",
+            max_age=SESSION_COOKIE_MAX_AGE,
+        )
+        return response
+
+
 class N8nProxyView(HomeAssistantView):
     """Reverse proxy to the n8n instance on the LAN.
 
     Catches every path under the proxy prefix and forwards it to n8n,
     rewriting the response so n8n's URLs run under the prefix. Also
     relays WebSocket upgrades (n8n's /rest/push live channel).
+
+    ``requires_auth`` is False on purpose: an iframe load cannot send
+    a Bearer header, so HA's own auth rejects it with 401. Access is
+    gated by the panel session cookie instead (see N8nSessionView) —
+    without a live session the proxy answers 401 itself.
     """
 
     url = PROXY_PREFIX + "/{path:.*}"
     name = "n8n_panel:proxy"
-    requires_auth = True
+    requires_auth = False
 
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
 
     async def _handle(self, request: web.Request) -> web.StreamResponse:
+        if not _validate_session(self.hass, request):
+            return web.Response(status=401, text="n8n Panel session required — reload the n8n panel.")
         base_url = _n8n_base_url(self.hass)
         if base_url is None:
             return web.Response(
@@ -242,11 +334,16 @@ class N8nProxyView(HomeAssistantView):
 class N8nProxyRootView(HomeAssistantView):
     """The proxy root (``/api/n8n_panel`` without a trailing slash)
     redirects to the trailing-slash form so relative URLs inside n8n
-    resolve under the prefix."""
+    resolve under the prefix. Same session-cookie gate as the proxy."""
 
     url = PROXY_PREFIX
     name = "n8n_panel:proxy_root"
-    requires_auth = True
+    requires_auth = False
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.hass = hass
 
     async def get(self, request: web.Request) -> web.StreamResponse:
+        if not _validate_session(self.hass, request):
+            return web.Response(status=401, text="n8n Panel session required — reload the n8n panel.")
         raise web.HTTPFound(PROXY_PREFIX + "/")

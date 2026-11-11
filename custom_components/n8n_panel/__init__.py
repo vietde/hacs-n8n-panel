@@ -31,7 +31,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, HA_ASSET_PREFIX, VERSION
-from .views import N8nPanelAssetView, N8nProxyRootView, N8nProxyView
+from .views import N8nPanelAssetView, N8nProxyRootView, N8nProxyView, N8nSessionView
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,7 +45,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN].update(options)
 
     hass.http.register_view(N8nPanelAssetView())
-    hass.http.register_view(N8nProxyRootView())
+    hass.http.register_view(N8nSessionView(hass))
+    hass.http.register_view(N8nProxyRootView(hass))
     hass.http.register_view(N8nProxyView(hass))
 
     # Sidebar panel as a custom element: it opens a full-size iframe to
